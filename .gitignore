@@ -1,2 +1,2 @@
-./tensorboard/*
-./saved_rl_models/*
+tensorboard/*
+saved_rl_models/*
