@@ -652,7 +652,7 @@ class SaveBestAndManageCallback(BaseCallback):
 # Example of testing the environment:
 if __name__ == '__main__':
     try:
-        env = CarlaGymEnv(render_enabled=True)
+        env = CarlaGymEnv(render_enabled=False)
         eval_env = CarlaGymEnv(render_enabled=False) 
         # env.seed(42)
 
@@ -661,11 +661,11 @@ if __name__ == '__main__':
         os.makedirs(save_dir, exist_ok=True)
 
         # Create the custom callback: save a checkpoint every 10,000 timesteps.
-        callback = SaveBestAndManageCallback(eval_env=eval_env, save_freq=100, save_path=save_dir, n_eval_episodes=5, verbose=1)
+        callback = SaveBestAndManageCallback(eval_env=eval_env, save_freq=1000, save_path=save_dir, n_eval_episodes=5, verbose=1)
 
         # Train a small A2C model to confirm everything runs.
         model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
-        model.learn(total_timesteps=40_000, callback=callback)
+        model.learn(total_timesteps=100_000, callback=callback)
 
         model.save("saved_rl_models/a2c_carla_model.zip")
 
