@@ -81,8 +81,8 @@ class Vector_BEV_observer:
                 proj_type="utm",
             )
         except Exception as e:
-            print("Lanelets cant be loaded")
-            print(e)
+            # print("Lanelets cant be loaded")
+            # print(e)
             self.lanelet_data = None
 
     def create_client(self):
