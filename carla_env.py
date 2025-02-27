@@ -40,6 +40,8 @@ USE_CUSTOM_MAP = False
 NUM_ACTIONS = 3
 N_ACTION_PER_MANEUVER = 5
 SHOW_ROUTE = True
+TRAIN = False
+TEST = True
 display_width = 1080
 display_height = 720
 
@@ -656,44 +658,46 @@ if __name__ == '__main__':
         eval_env = CarlaGymEnv(render_enabled=False) 
         # env.seed(42)
 
-        # Create a directory for saving models/checkpoints.
-        save_dir = "./saved_rl_models/0.1"
-        os.makedirs(save_dir, exist_ok=True)
+        if TRAIN:
+            # Create a directory for saving models/checkpoints.
+            save_dir = "./saved_rl_models/"
+            os.makedirs(save_dir, exist_ok=True)
 
-        # Create the custom callback: save a checkpoint every 10,000 timesteps.
-        callback = SaveBestAndManageCallback(eval_env=eval_env, save_freq=1000, save_path=save_dir, n_eval_episodes=5, verbose=1)
+            # Create the custom callback: save a checkpoint every 10,000 timesteps.
+            callback = SaveBestAndManageCallback(eval_env=eval_env, save_freq=1000, save_path=save_dir, n_eval_episodes=5, verbose=1)
 
-        # Train a small A2C model to confirm everything runs.
-        model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
-        model.learn(total_timesteps=200_000, callback=callback)
+            # Train a small A2C model to confirm everything runs.
+            model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
+            model.learn(total_timesteps=100_000, callback=callback)
 
-        model.save("saved_rl_models/a2c_carla_model.zip")
+        if TEST:
+            # Load the saved model.
+            model = A2C.load("saved_rl_models/model_63000.zip", env=env)
+            # Now test with a custom action:
+            obs = env.reset()
+            done = False
+            step_count = 0
 
-        # Now test with a custom action:
-        obs = env.reset()
-        done = False
-        step_count = 0
+            renderer = MatplotlibAnimationRenderer()
+            step = 0
+            while not done:
+                # action = env.action_space.sample()   # always drive x meters forward
+                # Get action from the trained model
+                action, _ = model.predict(obs, deterministic=True)
+                obs, reward, done, info = env.step(action)
+                step_count += 1
+                print(f"Step: {step_count}, Reward: {reward}, Sim Time: {info['sim_time']}")
 
-        renderer = MatplotlibAnimationRenderer()
-        step = 0
-        while not done:
-            # action = env.action_space.sample()   # always drive x meters forward
-            # Get action from the trained model
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
-            step_count += 1
-            print(f"Step: {step_count}, Reward: {reward}, Sim Time: {info['sim_time']}")
-
-            # ego_data = obs.get('ego')
-            # neighbors_data = obs.get('neighbors')
-            # map_data = obs.get('map')
-            # route_ef = obs.get('global_route')
-            # route_ef = route_ef[route_ef[:, 0] > 0]
-            
-            # Update the renderer with the latest simulation data.
-            # renderer.update_data(ego_data, neighbors_data, map_data, None, route_ef)
-            # renderer.update_plot(step)
-            step += 1
+                # ego_data = obs.get('ego')
+                # neighbors_data = obs.get('neighbors')
+                # map_data = obs.get('map')
+                # route_ef = obs.get('global_route')
+                # route_ef = route_ef[route_ef[:, 0] > 0]
+                
+                # Update the renderer with the latest simulation data.
+                # renderer.update_data(ego_data, neighbors_data, map_data, None, route_ef)
+                # renderer.update_plot(step)
+                step += 1
 
     except KeyboardInterrupt:
         print("Simulation interrupted.")
