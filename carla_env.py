@@ -143,7 +143,8 @@ class CarlaGymEnv(gym.Env):
         self.observation_space = spaces.Dict({
             "ego": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.HISTORY, 24), dtype=np.float32),
             "neighbors": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.MAX_NEIGHBORS, self.bev_info.HISTORY, 24), dtype=np.float32),
-            "map": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.MAX_LANES, self.bev_info.MAX_LANE_LEN, 46), dtype=np.float32)
+            "map": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.MAX_LANES, self.bev_info.MAX_LANE_LEN, 46), dtype=np.float32),
+            "global_route": spaces.Box(low=-np.inf, high=np.inf, shape=(self.bev_info.MAX_LANE_LEN, 3), dtype=np.float32)
         })
 
         self.global_route = None  # This will hold your global route.
@@ -356,6 +357,12 @@ class CarlaGymEnv(gym.Env):
 
         global_route_ego_frame = np.array(global_route_ego_frame)
         # print("Global route generated from", start_location, "to", destination.location)
+        global_route_ego_frame = global_route_ego_frame[global_route_ego_frame[:, 0] >= 0] # keep only the positive route
+        # make the route fixed size.
+        if len(global_route_ego_frame) > self.bev_info.MAX_LANE_LEN:
+            global_route_ego_frame = global_route_ego_frame[:self.bev_info.MAX_LANE_LEN]
+        elif len(global_route_ego_frame) < self.bev_info.MAX_LANE_LEN:
+            global_route_ego_frame = np.pad(global_route_ego_frame, (0, (self.bev_info.MAX_LANE_LEN - len(global_route_ego_frame))))
         return global_route_ego_frame
 
     def step(self, action):
@@ -371,7 +378,7 @@ class CarlaGymEnv(gym.Env):
                         color=carla.Color(255, 255, 0), 
                         life_time=self.SCENE_DURATION
                     )
-        else:
+        elif self.global_route is not None:
             # transform global route to ego frame
             self.global_route_ego_frame = self._transform_to_ego_frame()
 
@@ -655,8 +662,8 @@ class SaveBestAndManageCallback(BaseCallback):
 if __name__ == '__main__':
     try:
         env = CarlaGymEnv(render_enabled=False)
-        eval_env = CarlaGymEnv(render_enabled=False) 
-        # env.seed(42)
+        eval_env = CarlaGymEnv(render_enabled=True) 
+        eval_env.seed(3)
 
         if TRAIN:
             # Create a directory for saving models/checkpoints.
@@ -672,19 +679,19 @@ if __name__ == '__main__':
 
         if TEST:
             # Load the saved model.
-            model = A2C.load("saved_rl_models/model_63000.zip", env=env)
+            model = A2C.load("saved_rl_models/model_63000.zip", env=eval_env)
             # Now test with a custom action:
-            obs = env.reset()
+            obs = eval_env.reset()
             done = False
             step_count = 0
 
             renderer = MatplotlibAnimationRenderer()
             step = 0
             while not done:
-                # action = env.action_space.sample()   # always drive x meters forward
+                # action = eval_env.action_space.sample()   # always drive x meters forward
                 # Get action from the trained model
                 action, _ = model.predict(obs, deterministic=True)
-                obs, reward, done, info = env.step(action)
+                obs, reward, done, info = eval_env.step(action)
                 step_count += 1
                 print(f"Step: {step_count}, Reward: {reward}, Sim Time: {info['sim_time']}")
 
