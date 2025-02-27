@@ -42,6 +42,7 @@ N_ACTION_PER_MANEUVER = 5
 SHOW_ROUTE = True
 TRAIN = False
 TEST = True
+LOAD_MODEL = False
 display_width = 1080
 display_height = 720
 
@@ -147,9 +148,6 @@ class CarlaGymEnv(gym.Env):
             "global_route": spaces.Box(low=-np.inf, high=np.inf, shape=(self.bev_info.MAX_LANE_LEN, 3), dtype=np.float32)
         })
 
-        self.global_route = None  # This will hold your global route.
-        self.global_route_ego_frame = None
-
         # Initialize collision flag
         self.collision_detected = False
 
@@ -218,7 +216,9 @@ class CarlaGymEnv(gym.Env):
         self._cleanup()
         self.sim_time = 0.0
         self.collision_detected = False
-        self.global_route = None
+
+        # Initialize BEV observer (your original code uses FUTURE_LEN=1)
+        self.bev_info = Vector_BEV_observer(FUTURE_LEN=1)
 
         # Spawn Ego Vehicle
         vehicle_bp = self.blueprint_library.filter('vehicle.tesla.model3')[0]
@@ -295,6 +295,8 @@ class CarlaGymEnv(gym.Env):
         else:
             ego_obs, neighbors_obs, map_obs = None, None, None
 
+        self.global_route = None
+        self.global_route_ego_frame = torch.zeros(size=(self.bev_info.MAX_LANE_LEN, 3))
         observation = {"ego": ego_obs, 
                        "neighbors": neighbors_obs, 
                        "map": map_obs, 
@@ -356,13 +358,13 @@ class CarlaGymEnv(gym.Env):
             global_route_ego_frame.append([x_ego, y_ego, relative_yaw])
 
         global_route_ego_frame = np.array(global_route_ego_frame)
-        # print("Global route generated from", start_location, "to", destination.location)
         global_route_ego_frame = global_route_ego_frame[global_route_ego_frame[:, 0] >= 0] # keep only the positive route
         # make the route fixed size.
         if len(global_route_ego_frame) > self.bev_info.MAX_LANE_LEN:
             global_route_ego_frame = global_route_ego_frame[:self.bev_info.MAX_LANE_LEN]
         elif len(global_route_ego_frame) < self.bev_info.MAX_LANE_LEN:
-            global_route_ego_frame = np.pad(global_route_ego_frame, (0, (self.bev_info.MAX_LANE_LEN - len(global_route_ego_frame))))
+            padd_len = self.bev_info.MAX_LANE_LEN - len(global_route_ego_frame)
+            global_route_ego_frame = np.pad(global_route_ego_frame, ((0, padd_len), (0, 0)))
         return global_route_ego_frame
 
     def step(self, action):
@@ -378,7 +380,7 @@ class CarlaGymEnv(gym.Env):
                         color=carla.Color(255, 255, 0), 
                         life_time=self.SCENE_DURATION
                     )
-        elif self.global_route is not None:
+        else:
             # transform global route to ego frame
             self.global_route_ego_frame = self._transform_to_ego_frame()
 
@@ -662,7 +664,7 @@ class SaveBestAndManageCallback(BaseCallback):
 if __name__ == '__main__':
     try:
         env = CarlaGymEnv(render_enabled=False)
-        eval_env = CarlaGymEnv(render_enabled=True) 
+        eval_env = CarlaGymEnv(render_enabled=RENDER_CAMERA) 
         eval_env.seed(3)
 
         if TRAIN:
@@ -679,7 +681,10 @@ if __name__ == '__main__':
 
         if TEST:
             # Load the saved model.
-            model = A2C.load("saved_rl_models/model_63000.zip", env=eval_env)
+            if LOAD_MODEL:
+                model = A2C.load("saved_rl_models/model_63000.zip", env=eval_env)
+            else:
+                model = A2C("MultiInputPolicy", env)
             # Now test with a custom action:
             obs = eval_env.reset()
             done = False
