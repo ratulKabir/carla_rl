@@ -551,7 +551,7 @@ class CarlaGymEnv(gym.Env):
         lateral_error, longitudinal_progress = self._compute_route_error(target_global)
         
         # Define scaling factors.
-        lateral_penalty_scale = 0.1   # penalty per meter of lateral deviation
+        lateral_penalty_scale = 10.0  # penalty per meter of lateral deviation
         longitudinal_reward_scale = 50.0  # bonus per meter of progress along the route
         
         # Compute base reward.
@@ -657,7 +657,7 @@ if __name__ == '__main__':
         # env.seed(42)
 
         # Create a directory for saving models/checkpoints.
-        save_dir = "./saved_rl_models/"
+        save_dir = "./saved_rl_models/0.1"
         os.makedirs(save_dir, exist_ok=True)
 
         # Create the custom callback: save a checkpoint every 10,000 timesteps.
@@ -665,7 +665,7 @@ if __name__ == '__main__':
 
         # Train a small A2C model to confirm everything runs.
         model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
-        model.learn(total_timesteps=100_000, callback=callback)
+        model.learn(total_timesteps=200_000, callback=callback)
 
         model.save("saved_rl_models/a2c_carla_model.zip")
 
