@@ -35,13 +35,13 @@ EGO_AUTOPILOT = False
 FOLLOW_POINT_DIST = 8   # meters (used in custom_sample_action)
 REQ_TIME = 1            # seconds
 FREQUENCY = 0.1         # simulation tick time
-RENDER_CAMERA = True
+RENDER_CAMERA = False
 USE_CUSTOM_MAP = False
 NUM_ACTIONS = 3
 N_ACTION_PER_MANEUVER = 5
 SHOW_ROUTE = True
-TRAIN = False
-TEST = True
+TRAIN = True
+TEST = False
 LOAD_MODEL = False
 display_width = 1080
 display_height = 720
@@ -134,8 +134,7 @@ class CarlaGymEnv(gym.Env):
         self.N_ACTION_PER_MANEUVER = N_ACTION_PER_MANEUVER
         self.action_space = spaces.MultiDiscrete([self.NUM_MANEUVERS, self.N_ACTION_PER_MANEUVER])
         # Define the possible values for each dimension
-        self.action_y = [0, -5, 5]           # Assuming NUM_MANEUVERS is 3
-        self.action_x = [0, 1, 3, 5, 10]     # Assuming N_ACTION_PER_MANEUVER is 5
+        self.index_map = {1: 1, 2: 5, 3: 10, 4: 15}
         # --------------------------------------------------------
         # Hard-code your observation space to match the shapes you expect.
         # Example shapes (leading dimension 1 for ego, 5 for neighbors, etc.).
@@ -359,13 +358,14 @@ class CarlaGymEnv(gym.Env):
 
         global_route_ego_frame = np.array(global_route_ego_frame)
         global_route_ego_frame = global_route_ego_frame[global_route_ego_frame[:, 0] >= 0] # keep only the positive route
+        global_route_ego_frame_no_padding = global_route_ego_frame[:self.bev_info.MAX_LANE_LEN].copy()
         # make the route fixed size.
         if len(global_route_ego_frame) > self.bev_info.MAX_LANE_LEN:
             global_route_ego_frame = global_route_ego_frame[:self.bev_info.MAX_LANE_LEN]
         elif len(global_route_ego_frame) < self.bev_info.MAX_LANE_LEN:
             padd_len = self.bev_info.MAX_LANE_LEN - len(global_route_ego_frame)
             global_route_ego_frame = np.pad(global_route_ego_frame, ((0, padd_len), (0, 0)))
-        return global_route_ego_frame
+        return global_route_ego_frame, global_route_ego_frame_no_padding
 
     def step(self, action):
         # Compute the global route only once.
@@ -380,9 +380,9 @@ class CarlaGymEnv(gym.Env):
                         color=carla.Color(255, 255, 0), 
                         life_time=self.SCENE_DURATION
                     )
-        else:
+        if self.global_route is not None:
             # transform global route to ego frame
-            self.global_route_ego_frame = self._transform_to_ego_frame()
+            self.global_route_ego_frame, self.global_route_ego_frame_no_padding = self._transform_to_ego_frame()
 
         # Get current ego transform information
         ego_transform = self.ego_vehicle.get_transform()
@@ -391,12 +391,27 @@ class CarlaGymEnv(gym.Env):
         ego_yaw_global = np.deg2rad(ego_transform.rotation.yaw)
 
         if not self.EGO_AUTOPILOT:
-            # Loop over maneuvers and actions using enumeration.
-            for man, y in enumerate(self.action_y):
-                for act, x in enumerate(self.action_x):
-                    if action[0] == man and action[1] == act:
-                        action = np.array([x, y])
-            target_global = self.ego_to_global(np.array(action), ego_position_global, ego_yaw_global)
+            action_point = action.copy()
+            if action[0] in {0, 1, 2} and 1 <= action[1] <= 4:
+                self.index_map = {1: 1, 2: 5, 3: 10, 4: 15}
+                chosen_index = self.index_map[action[1]]
+
+                # Ensure the chosen index exists in self.global_route_ego_frame
+                if chosen_index >= len(self.global_route_ego_frame_no_padding):
+                    chosen_index = len(self.global_route_ego_frame_no_padding) - 1  # Use the last index
+
+                # If the last index has a negative value, choose index 0
+                if self.global_route_ego_frame_no_padding[chosen_index, 0] < 0:
+                    chosen_index = 0
+
+                action_point = self.global_route_ego_frame_no_padding[chosen_index, :2].copy()
+
+                if action[0] == 1:
+                    action_point[0] = -5.0  # TODO: x position should be perpendicular to the current action
+                elif action[0] == 2:
+                    action_point[0] = 5.0   # TODO: x position should be perpendicular to the current action
+
+            target_global = self.ego_to_global(np.array(action_point), ego_position_global, ego_yaw_global)
             target_location = carla.Location(x=target_global[0], y=target_global[1], z=current_location.z)
 
             # Draw the target point in CARLA for debugging
@@ -584,8 +599,6 @@ class CarlaGymEnv(gym.Env):
 
         return reward, False
 
-
-
     def render(self, mode="human"):
         # Create the renderer if it doesn't already exist.
         if not hasattr(self, 'matplotlib_renderer'):
@@ -663,7 +676,7 @@ class SaveBestAndManageCallback(BaseCallback):
 # Example of testing the environment:
 if __name__ == '__main__':
     try:
-        env = CarlaGymEnv(render_enabled=False)
+        env = CarlaGymEnv(render_enabled=True)
         eval_env = CarlaGymEnv(render_enabled=RENDER_CAMERA) 
         eval_env.seed(3)
 
@@ -693,6 +706,7 @@ if __name__ == '__main__':
             renderer = MatplotlibAnimationRenderer()
             step = 0
             while not done:
+                # Selelct random action from env
                 # action = eval_env.action_space.sample()   # always drive x meters forward
                 # Get action from the trained model
                 action, _ = model.predict(obs, deterministic=True)
