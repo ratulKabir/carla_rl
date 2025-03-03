@@ -392,24 +392,29 @@ class CarlaGymEnv(gym.Env):
 
         if not self.EGO_AUTOPILOT:
             action_point = action.copy()
-            if action[0] in {0, 1, 2} and 1 <= action[1] <= 4:
-                self.index_map = {1: 1, 2: 5, 3: 10, 4: 15}
-                chosen_index = self.index_map[action[1]]
+            if len(self.global_route_ego_frame_no_padding):
+                if action[0] in {0, 1, 2} and 1 <= action[1] <= 4:
+                    self.index_map = {1: 1, 2: 5, 3: 10, 4: 15}
+                    chosen_index = self.index_map[action[1]]
 
-                # Ensure the chosen index exists in self.global_route_ego_frame
-                if chosen_index >= len(self.global_route_ego_frame_no_padding):
-                    chosen_index = len(self.global_route_ego_frame_no_padding) - 1  # Use the last index
+                    # Ensure the chosen index exists in self.global_route_ego_frame
+                    if chosen_index >= len(self.global_route_ego_frame_no_padding):
+                        chosen_index = len(self.global_route_ego_frame_no_padding) - 1  # Use the last index
+                        if chosen_index < 0:
+                            chosen_index = 0
 
-                # If the last index has a negative value, choose index 0
-                if self.global_route_ego_frame_no_padding[chosen_index, 0] < 0:
-                    chosen_index = 0
+                    # If the last index has a negative value, choose index 0
+                    if self.global_route_ego_frame_no_padding[chosen_index, 0] < 0:
+                        chosen_index = 0
 
-                action_point = self.global_route_ego_frame_no_padding[chosen_index, :2].copy()
+                    action_point = self.global_route_ego_frame_no_padding[chosen_index, :2].copy()
 
-                if action[0] == 1:
-                    action_point[0] = -5.0  # TODO: x position should be perpendicular to the current action
-                elif action[0] == 2:
-                    action_point[0] = 5.0   # TODO: x position should be perpendicular to the current action
+                    if action[0] == 1:
+                        action_point[0] = -5.0  # TODO: x position should be perpendicular to the current action
+                    elif action[0] == 2:
+                        action_point[0] = 5.0   # TODO: x position should be perpendicular to the current action
+            else:
+                action_point = np.array([0.0, 0.0])
 
             target_global = self.ego_to_global(np.array(action_point), ego_position_global, ego_yaw_global)
             target_location = carla.Location(x=target_global[0], y=target_global[1], z=current_location.z)
@@ -676,13 +681,13 @@ class SaveBestAndManageCallback(BaseCallback):
 # Example of testing the environment:
 if __name__ == '__main__':
     try:
-        env = CarlaGymEnv(render_enabled=True)
+        env = CarlaGymEnv(render_enabled=False)
         eval_env = CarlaGymEnv(render_enabled=RENDER_CAMERA) 
         eval_env.seed(3)
 
         if TRAIN:
             # Create a directory for saving models/checkpoints.
-            save_dir = "./saved_rl_models/"
+            save_dir = "./saved_rl_models/1.0"
             os.makedirs(save_dir, exist_ok=True)
 
             # Create the custom callback: save a checkpoint every 10,000 timesteps.
@@ -690,7 +695,7 @@ if __name__ == '__main__':
 
             # Train a small A2C model to confirm everything runs.
             model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
-            model.learn(total_timesteps=100_000, callback=callback)
+            model.learn(total_timesteps=200_000, callback=callback)
 
         if TEST:
             # Load the saved model.
