@@ -551,9 +551,9 @@ class CarlaGymEnv(gym.Env):
             return -200.0, True  # Ends episode with high penalty for collisions
 
         # Compute distance to goal
-        target_xy = np.array([target_global.x, target_global.y])
-        ego_xy = np.array([self.ego_vehicle.get_location().x, self.ego_vehicle.get_location().y])
-        distance_to_goal = np.linalg.norm(ego_xy - target_xy)
+        target_xy = self.global_route[-1, :2]
+        action_xy = np.array([target_global.x, target_global.y])
+        distance_to_goal = np.linalg.norm(action_xy - target_xy)
 
         # Step penalty (encourages efficiency)
         step_penalty = -1.0
