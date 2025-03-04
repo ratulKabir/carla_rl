@@ -531,11 +531,11 @@ class CarlaGymEnv(gym.Env):
     def _compute_reward(self, target_global):
         """
         Compute the reward based on:
-        - A penalty for being far from the goal.
-        - A reward for getting closer to the goal.
-        - A step penalty that scales with distance.
-        - A big bonus for reaching the goal.
-        
+        - A small penalty for being far from the goal.
+        - A lower reward for getting closer to the goal.
+        - A smaller step penalty.
+        - A reduced bonus for reaching the goal.
+
         Args:
             target_global: A CARLA Location representing the target point in global coordinates.
 
@@ -543,31 +543,30 @@ class CarlaGymEnv(gym.Env):
             reward (float): The computed reward.
             done (bool): Whether the episode should terminate.
         """
-
+        
         # Terminal conditions
         if self.sim_time >= self.SCENE_DURATION:
-            return -50.0, True  # Stronger penalty for running out of time
+            return -5.0, True  # Reduced penalty for running out of time
         elif self.collision_detected:
-            return -200.0, True  # Ends episode with high penalty for collisions
+            return -20.0, True  # Reduced penalty for collisions
 
         # Compute distance to goal
-        # target_xy = self.global_route[-1, :2]
         action_xy = np.array([target_global.x, target_global.y])
-        distance_to_goal = self.compute_distance_to_goal(action_xy) # np.linalg.norm(action_xy - target_xy)
+        distance_to_goal = self.compute_distance_to_goal(action_xy)
 
-        # Step penalty (scaled by distance)
-        step_penalty = -0.1 * distance_to_goal
+        # Reduced step penalty
+        step_penalty = -0.01 * distance_to_goal
 
-        # Reward for reducing distance to goal (progress-based reward)
+        # Reduced progress-based reward
         if not hasattr(self, "prev_distance"):
             self.prev_distance = distance_to_goal  # Initialize on first call
-        progress_reward = 10.0 * (self.prev_distance - distance_to_goal)
+        progress_reward = 1.0 * (self.prev_distance - distance_to_goal)
         self.prev_distance = distance_to_goal  # Update for next step
 
-        # Strong reward for reaching the goal
+        # Reduced goal bonus
         goal_threshold = 0.5  # meters
         if distance_to_goal < goal_threshold:
-            progress_reward += 500.0  # Large bonus for reaching the goal
+            progress_reward += 50.0  # Reduced large bonus
 
         # The episode should not end when the goal is reached
         done = False  
@@ -575,6 +574,7 @@ class CarlaGymEnv(gym.Env):
         # Total reward
         reward = step_penalty + progress_reward
         return reward, done
+
 
     def compute_distance_to_goal(self, action_xy):
         """
