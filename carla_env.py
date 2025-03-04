@@ -528,81 +528,55 @@ class CarlaGymEnv(gym.Env):
         desired_lane_point = route_xy[idx]
         return desired_lane_yaw, desired_lane_point
 
-
-    def _compute_lane_penalty(self):
-        """
-        Compute a penalty if the ego vehicle's current lane direction deviates from the desired lane direction.
-        
-        Returns:
-            lane_penalty (float): A penalty value based on the deviation in yaw (in degrees).
-        """
-        # Get current lane orientation from the ego vehicle's current waypoint.
-        current_waypoint = self.world.get_map().get_waypoint(self.ego_vehicle.get_location())
-        current_lane_yaw = current_waypoint.transform.rotation.yaw  # in degrees
-        
-        # Get desired lane yaw from the global route.
-        desired_lane_yaw, _ = self._get_desired_lane_info()
-        
-        # Compute minimal difference in yaw (accounting for circularity of angles).
-        yaw_diff = abs((current_lane_yaw - desired_lane_yaw + 180) % 360 - 180)
-        
-        # Apply a penalty if the yaw difference exceeds a threshold (e.g., 10 degrees).
-        threshold = 10.0  # degrees
-        penalty = 0.0
-        if yaw_diff > threshold:
-            penalty = (yaw_diff - threshold) * 0.5  # scaling factor; adjust as needed
-        return penalty
-
-
     def _compute_reward(self, target_global):
         """
         Compute the reward based on:
-        - A base reward,
-        - A penalty for lateral error (distance off the global route),
-        - A bonus for longitudinal progress along the route,
-        - A lane penalty for deviating from the desired lane direction.
-        - A big bonus if the vehicle reaches near the end of the global route.
-        
-        Terminal rewards are applied if a collision occurred or if simulation time is exceeded.
-        
+        - A penalty for being far from the goal.
+        - A positive reward for getting closer to the goal.
+        - A step penalty to encourage efficiency.
+        - No episode termination when the ego reaches the goal.
+
         Args:
             target_global: A CARLA Location representing the target point in global coordinates.
-        
+
         Returns:
             reward (float): The computed reward.
             done (bool): Whether the episode should terminate.
         """
-        # Terminal conditions.
-        if self.collision_detected:
-            return -100.0, True
-        elif self.sim_time >= self.SCENE_DURATION:
-            return 100.0, True
 
-        # Compute route errors (lateral error and longitudinal progress).
-        lateral_error, longitudinal_progress = self._compute_route_error(target_global)
-        
-        # Define scaling factors.
-        lateral_penalty_scale = 10.0  # penalty per meter of lateral deviation
-        longitudinal_reward_scale = 50.0  # bonus per meter of progress along the route
-        
-        # Compute base reward.
-        reward = 1.0 - lateral_penalty_scale * lateral_error + longitudinal_reward_scale * longitudinal_progress
-        
-        # Add lane penalty based on deviation from desired lane direction.
-        lane_penalty = self._compute_lane_penalty()
-        reward -= lane_penalty
-        
-        # Check if the target is near the end of the global route.
-        route_end = self.global_route[-1, :2]  # (x, y) of the last route point
+        # Terminal condition: If time runs out
+        if self.sim_time >= self.SCENE_DURATION:
+            return -50.0, True  # Stronger penalty for running out of time
+        elif self.collision_detected:
+            return -200.0, True  # Ends episode with high penalty for collisions
+
+        # Compute distance to goal
         target_xy = np.array([target_global.x, target_global.y])
-        end_distance = np.linalg.norm(target_xy - route_end)
-        
-        end_threshold = 5.0  # meters threshold for considering the destination reached
-        if end_distance < end_threshold:
-            reward += 200.0  # big bonus for reaching the destination
-            return reward, True
+        ego_xy = np.array([self.ego_vehicle.get_location().x, self.ego_vehicle.get_location().y])
+        distance_to_goal = np.linalg.norm(ego_xy - target_xy)
 
-        return reward, False
+        # Step penalty (encourages efficiency)
+        step_penalty = -1.0
+
+        # New progress reward: Negative when far, positive near the goal
+        progress_reward = 100.0 * (1.0 / (1.0 + distance_to_goal) - 1.0)
+
+        # Reward for staying at the goal
+        goal_threshold = 0.5  # meters
+        if distance_to_goal < goal_threshold:
+            progress_reward += 5.0  # Small bonus for staying at the goal
+
+            # Penalize movement after reaching the goal
+            # ego_velocity = np.linalg.norm(self.ego_vehicle.get_velocity())  # Compute speed
+            # if ego_velocity > 0.1:  # If moving when it should be still
+            #     progress_reward -= 2.0  # Small penalty for unnecessary movement
+
+        # Ensure episode doesn't terminate when the goal is reached
+        done = False  
+
+        # Total reward
+        reward = step_penalty + progress_reward
+        return reward, done
 
     def render(self, mode="human"):
         # Create the renderer if it doesn't already exist.
@@ -687,7 +661,7 @@ if __name__ == '__main__':
 
         if TRAIN:
             # Create a directory for saving models/checkpoints.
-            save_dir = "./saved_rl_models/1.0"
+            save_dir = "./saved_rl_models/1.1"
             os.makedirs(save_dir, exist_ok=True)
 
             # Create the custom callback: save a checkpoint every 10,000 timesteps.
@@ -695,7 +669,7 @@ if __name__ == '__main__':
 
             # Train a small A2C model to confirm everything runs.
             model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
-            model.learn(total_timesteps=200_000, callback=callback)
+            model.learn(total_timesteps=100_000, callback=callback)
 
         if TEST:
             # Load the saved model.
