@@ -551,9 +551,9 @@ class CarlaGymEnv(gym.Env):
             return -200.0, True  # Ends episode with high penalty for collisions
 
         # Compute distance to goal
-        target_xy = self.global_route[-1, :2]
+        # target_xy = self.global_route[-1, :2]
         action_xy = np.array([target_global.x, target_global.y])
-        distance_to_goal = np.linalg.norm(action_xy - target_xy)
+        distance_to_goal = self.compute_distance_to_goal(action_xy) # np.linalg.norm(action_xy - target_xy)
 
         # Step penalty (scaled by distance)
         step_penalty = -0.1 * distance_to_goal
@@ -575,6 +575,30 @@ class CarlaGymEnv(gym.Env):
         # Total reward
         reward = step_penalty + progress_reward
         return reward, done
+
+    def compute_distance_to_goal(self, action_xy):
+        """
+        Compute the remaining distance to the goal by summing the route distances
+        from the closest point to the goal.
+
+        Args:
+            action_xy: The agent's current position as (x, y).
+
+        Returns:
+            distance_to_goal (float): The accumulated distance along the global route.
+        """
+        # Extract (x, y) positions of the route
+        route_xy = self.global_route[:, :2]
+
+        # Find the closest point on the global route
+        distances = np.linalg.norm(route_xy - action_xy, axis=1)  # Distance to all route points
+        closest_idx = np.argmin(distances)  # Index of the closest point
+
+        # Compute cumulative distance from the closest point to the goal
+        remaining_distances = np.linalg.norm(np.diff(route_xy[closest_idx:], axis=0), axis=1)
+        distance_to_goal = np.sum(remaining_distances)  # Sum up all distances
+
+        return distance_to_goal
 
 
     def render(self, mode="human"):
