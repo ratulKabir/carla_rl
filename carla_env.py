@@ -532,10 +532,10 @@ class CarlaGymEnv(gym.Env):
         """
         Compute the reward based on:
         - A penalty for being far from the goal.
-        - A positive reward for getting closer to the goal.
-        - A step penalty to encourage efficiency.
-        - No episode termination when the ego reaches the goal.
-
+        - A reward for getting closer to the goal.
+        - A step penalty that scales with distance.
+        - A big bonus for reaching the goal.
+        
         Args:
             target_global: A CARLA Location representing the target point in global coordinates.
 
@@ -544,7 +544,7 @@ class CarlaGymEnv(gym.Env):
             done (bool): Whether the episode should terminate.
         """
 
-        # Terminal condition: If time runs out
+        # Terminal conditions
         if self.sim_time >= self.SCENE_DURATION:
             return -50.0, True  # Stronger penalty for running out of time
         elif self.collision_detected:
@@ -555,28 +555,27 @@ class CarlaGymEnv(gym.Env):
         action_xy = np.array([target_global.x, target_global.y])
         distance_to_goal = np.linalg.norm(action_xy - target_xy)
 
-        # Step penalty (encourages efficiency)
-        step_penalty = -1.0
+        # Step penalty (scaled by distance)
+        step_penalty = -0.1 * distance_to_goal
 
-        # New progress reward: Negative when far, positive near the goal
-        progress_reward = 100.0 * (1.0 / (1.0 + distance_to_goal) - 1.0)
+        # Reward for reducing distance to goal (progress-based reward)
+        if not hasattr(self, "prev_distance"):
+            self.prev_distance = distance_to_goal  # Initialize on first call
+        progress_reward = 10.0 * (self.prev_distance - distance_to_goal)
+        self.prev_distance = distance_to_goal  # Update for next step
 
-        # Reward for staying at the goal
+        # Strong reward for reaching the goal
         goal_threshold = 0.5  # meters
         if distance_to_goal < goal_threshold:
-            progress_reward += 5.0  # Small bonus for staying at the goal
+            progress_reward += 500.0  # Large bonus for reaching the goal
 
-            # Penalize movement after reaching the goal
-            # ego_velocity = np.linalg.norm(self.ego_vehicle.get_velocity())  # Compute speed
-            # if ego_velocity > 0.1:  # If moving when it should be still
-            #     progress_reward -= 2.0  # Small penalty for unnecessary movement
-
-        # Ensure episode doesn't terminate when the goal is reached
+        # The episode should not end when the goal is reached
         done = False  
 
         # Total reward
         reward = step_penalty + progress_reward
         return reward, done
+
 
     def render(self, mode="human"):
         # Create the renderer if it doesn't already exist.
