@@ -93,7 +93,7 @@ class CarlaGymEnv(gym.Env):
 
             # Generate the world using the OpenDRIVE map
             self.world = self.client.generate_opendrive_world(
-                # opendrive_data,  # commented out, fix if needed
+                opendrive_data,  # commented out, fix if needed
                 carla.OpendriveGenerationParameters(
                     wall_height=0.0, 
                     additional_width=0.0, 
@@ -406,10 +406,15 @@ class CarlaGymEnv(gym.Env):
 
                     action_point = self.global_route_ego_frame_no_padding[chosen_index, :2].copy()
 
+                    yaw = self.global_route_ego_frame_no_padding[chosen_index, 2]  # Extract yaw (in radians)
+
+                    # Compute perpendicular displacement (90-degree rotation)
+                    perpendicular = np.array([-np.sin(yaw), np.cos(yaw)]) 
+
                     if action[0] == 1:
-                        action_point[0] = -5.0  # TODO: x position should be perpendicular to the current action
+                        action_point = action_point + (-5.0 * perpendicular)                    
                     elif action[0] == 2:
-                        action_point[0] = 5.0   # TODO: x position should be perpendicular to the current action
+                        action_point = action_point + (5.0 * perpendicular) 
             else:
                 action_point = np.array([0.0, 0.0])
 
