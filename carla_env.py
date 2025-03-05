@@ -28,21 +28,22 @@ from carla_env_render import MatplotlibAnimationRenderer
 
 
 # Global parameters (default values)
-N_VEHICLES = 30
-SCENE_DURATION = 5 * 60  # seconds
+N_VEHICLES = 1
+SCENE_DURATION = 1.0 * 60  # seconds
 SLOWDOWN_PERCENTAGE = 10
 EGO_AUTOPILOT = False
 FOLLOW_POINT_DIST = 8   # meters (used in custom_sample_action)
-REQ_TIME = 1            # seconds
+REQ_TIME = 3            # seconds
 FREQUENCY = 0.1         # simulation tick time
-RENDER_CAMERA = False
+RENDER_CAMERA = True
 USE_CUSTOM_MAP = False
 NUM_ACTIONS = 3
 N_ACTION_PER_MANEUVER = 5
 SHOW_ROUTE = True
-TRAIN = True
-TEST = False
-LOAD_MODEL = False
+TRAIN = False
+TEST = True
+LOAD_MODEL = True
+SAVED_MODEL_PATH = "saved_rl_models/1.1/model_55000.zip"
 display_width = 1080
 display_height = 720
 
@@ -685,7 +686,7 @@ if __name__ == '__main__':
     try:
         env = CarlaGymEnv(render_enabled=False)
         eval_env = CarlaGymEnv(render_enabled=RENDER_CAMERA) 
-        eval_env.seed(3)
+        eval_env.seed(13)
 
         if TRAIN:
             # Create a directory for saving models/checkpoints.
@@ -702,7 +703,7 @@ if __name__ == '__main__':
         if TEST:
             # Load the saved model.
             if LOAD_MODEL:
-                model = A2C.load("saved_rl_models/model_63000.zip", env=eval_env)
+                model = A2C.load(SAVED_MODEL_PATH, env=eval_env)
             else:
                 model = A2C("MultiInputPolicy", env)
             # Now test with a custom action:
