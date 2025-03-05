@@ -617,11 +617,14 @@ class CarlaGymEnv(gym.Env):
     
     def custom_sample_action(self):
         """
-        Returns an action that corresponds to FOLLOW_POINT_DIST meters ahead
-        of the ego's current position. Since the action is in the ego coordinate system,
-        [FOLLOW_POINT_DIST, 0] means x meters forward and 0 lateral offset.
+        Returns a random valid action from the defined MultiDiscrete action space.
+        The first value corresponds to a maneuver (0 to NUM_MANEUVERS - 1),
+        and the second value corresponds to a sub-action within that maneuver (0 to N_ACTION_PER_MANEUVER - 1).
         """
-        return np.array([self.FOLLOW_POINT_DIST, 0])
+        maneuver = np.random.randint(0, self.NUM_MANEUVERS)  # Random maneuver index
+        sub_action = np.random.randint(0, self.N_ACTION_PER_MANEUVER)  # Random sub-action index
+
+        return np.array([maneuver, sub_action])
 
     def close(self):
         """
