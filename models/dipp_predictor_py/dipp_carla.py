@@ -1,4 +1,4 @@
-from dipp_predictor_py.dipp_predictor_utils import *
+from models.dipp_predictor_py.dipp_predictor_utils import *
 
 
 # Build predictor

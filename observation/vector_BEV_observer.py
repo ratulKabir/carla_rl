@@ -20,12 +20,12 @@ from time import sleep
 # sys.path.append(PATH)
 
 from carla import ad
-from decision_traffic_rules.feature_indices import agent_feat_id
-from decision_traffic_rules.traffic_sign_db import traffic_feat_idx, regulatory_ts_encoding
+from observation.decision_traffic_rules.feature_indices import agent_feat_id
+from observation.decision_traffic_rules.traffic_sign_db import traffic_feat_idx, regulatory_ts_encoding
 # from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 
 
-from tr_costs import *
+from observation.tr_costs import *
 
 matplotlib.use("Agg")
 

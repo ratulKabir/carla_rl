@@ -7,9 +7,7 @@ import gym
 from gym import spaces
 import os
 import sys
-from stable_baselines3 import A2C
-from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
-from stable_baselines3.common.evaluation import evaluate_policy
+import yaml  # Import YAML parser
 
 # Expand the CARLA_ROOT environment variable correctly:
 carla_root = os.environ.get("CARLA_ROOT")
@@ -22,30 +20,29 @@ from agents.navigation.controller import VehiclePIDController
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 
 # MAI imports
-from vector_BEV_observer import Vector_BEV_observer
-from dipp_predictor_py.dipp_carla import Predictor
-from carla_env_render import MatplotlibAnimationRenderer
+from observation.vector_BEV_observer import Vector_BEV_observer
+from models.dipp_predictor_py.dipp_carla import Predictor
+from envs.carla_env_render import MatplotlibAnimationRenderer
 
+# Load configurations from YAML
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "configs/config.yaml")
+with open(CONFIG_PATH, "r") as config_file:
+    config = yaml.safe_load(config_file)
 
-# Global parameters (default values)
-N_VEHICLES = 30
-SCENE_DURATION = 5 * 60  # seconds
-SLOWDOWN_PERCENTAGE = 10
-EGO_AUTOPILOT = False
-FOLLOW_POINT_DIST = 8   # meters (used in custom_sample_action)
-REQ_TIME = 1            # seconds
-FREQUENCY = 0.1         # simulation tick time
-RENDER_CAMERA = False
-USE_CUSTOM_MAP = False
-NUM_ACTIONS = 3
-N_ACTION_PER_MANEUVER = 5
-SHOW_ROUTE = True
-TRAIN = True
-TEST = False
-LOAD_MODEL = False
-display_width = 1080
-display_height = 720
-
+# Assign configurations to variables
+N_VEHICLES = config["N_VEHICLES"]
+SCENE_DURATION = config["SCENE_DURATION"]
+SLOWDOWN_PERCENTAGE = config["SLOWDOWN_PERCENTAGE"]
+EGO_AUTOPILOT = config["EGO_AUTOPILOT"]
+FOLLOW_POINT_DIST = config["FOLLOW_POINT_DIST"]
+REQ_TIME = config["REQ_TIME"]
+FREQUENCY = config["FREQUENCY"]
+USE_CUSTOM_MAP = config["USE_CUSTOM_MAP"]
+NUM_ACTIONS = config["NUM_ACTIONS"]
+N_ACTION_PER_MANEUVER = config["N_ACTION_PER_MANEUVER"]
+SHOW_ROUTE = config["SHOW_ROUTE"]
+display_width = config["display_width"]
+display_height = config["display_height"]
 
 class CarlaGymEnv(gym.Env):
     """
@@ -633,107 +630,3 @@ class CarlaGymEnv(gym.Env):
         self._cleanup()
         if self.render_enabled:
             pygame.quit()
-
-
-class SaveBestAndManageCallback(BaseCallback):
-    """
-    Custom callback that:
-      - Saves a checkpoint every `save_freq` timesteps.
-      - Keeps only the most recent 5 checkpoint files.
-      - Uses an EvalCallback to save the best model based on evaluation performance.
-    """
-    def __init__(self, eval_env, save_freq, save_path, n_eval_episodes=5, verbose=1):
-        super(SaveBestAndManageCallback, self).__init__(verbose)
-        self.save_freq = save_freq
-        self.save_path = save_path
-        self.n_eval_episodes = n_eval_episodes
-        self.saved_checkpoints = []  # list to store checkpoint filenames
-        
-        # Create a separate EvalCallback for saving the best model.
-        self.eval_callback = EvalCallback(eval_env,
-                                          best_model_save_path=save_path,
-                                          n_eval_episodes=n_eval_episodes,
-                                          verbose=verbose)
-
-    def _on_step(self) -> bool:
-        # Periodically save a checkpoint.
-        if self.num_timesteps % self.save_freq == 0:
-            ckpt_path = os.path.join(self.save_path, f"model_{self.num_timesteps}.zip")
-            self.model.save(ckpt_path)
-            self.saved_checkpoints.append(ckpt_path)
-            if self.verbose > 0:
-                print(f"Saved checkpoint: {ckpt_path}")
-            # Delete oldest checkpoints if more than 5 are saved.
-            if len(self.saved_checkpoints) > 5:
-                old_ckpt = self.saved_checkpoints.pop(0)
-                if os.path.exists(old_ckpt):
-                    os.remove(old_ckpt)
-                    if self.verbose > 0:
-                        print(f"Deleted old checkpoint: {old_ckpt}")
-        return True
-
-    def _on_rollout_end(self):
-        # At the end of each rollout, run the evaluation callback.
-        self.eval_callback.on_rollout_end()
-
-    def _on_training_end(self):
-        # Make sure to call the evaluation callback's training end routine.
-        self.eval_callback.on_training_end()
-
-# Example of testing the environment:
-if __name__ == '__main__':
-    try:
-        env = CarlaGymEnv(render_enabled=False)
-        eval_env = CarlaGymEnv(render_enabled=RENDER_CAMERA) 
-        eval_env.seed(3)
-
-        if TRAIN:
-            # Create a directory for saving models/checkpoints.
-            save_dir = "./saved_rl_models/1.1"
-            os.makedirs(save_dir, exist_ok=True)
-
-            # Create the custom callback: save a checkpoint every 10,000 timesteps.
-            callback = SaveBestAndManageCallback(eval_env=eval_env, save_freq=1000, save_path=save_dir, n_eval_episodes=5, verbose=1)
-
-            # Train a small A2C model to confirm everything runs.
-            model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
-            model.learn(total_timesteps=100_000, callback=callback)
-
-        if TEST:
-            # Load the saved model.
-            if LOAD_MODEL:
-                model = A2C.load("saved_rl_models/model_63000.zip", env=eval_env)
-            else:
-                model = A2C("MultiInputPolicy", env)
-            # Now test with a custom action:
-            obs = eval_env.reset()
-            done = False
-            step_count = 0
-
-            renderer = MatplotlibAnimationRenderer()
-            step = 0
-            while not done:
-                # Selelct random action from env
-                # action = eval_env.action_space.sample()   # always drive x meters forward
-                # Get action from the trained model
-                action, _ = model.predict(obs, deterministic=True)
-                obs, reward, done, info = eval_env.step(action)
-                step_count += 1
-                print(f"Step: {step_count}, Reward: {reward}, Sim Time: {info['sim_time']}")
-
-                # ego_data = obs.get('ego')
-                # neighbors_data = obs.get('neighbors')
-                # map_data = obs.get('map')
-                # route_ef = obs.get('global_route')
-                # route_ef = route_ef[route_ef[:, 0] > 0]
-                
-                # Update the renderer with the latest simulation data.
-                # renderer.update_data(ego_data, neighbors_data, map_data, None, route_ef)
-                # renderer.update_plot(step)
-                step += 1
-
-    except KeyboardInterrupt:
-        print("Simulation interrupted.")
-    finally:
-        env.close()
-        print("Environment closed.")
