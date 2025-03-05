@@ -29,7 +29,7 @@ from carla_env_render import MatplotlibAnimationRenderer
 
 # Global parameters (default values)
 N_VEHICLES = 30
-SCENE_DURATION = 1 * 60  # seconds
+SCENE_DURATION = 5 * 60  # seconds
 SLOWDOWN_PERCENTAGE = 10
 EGO_AUTOPILOT = False
 FOLLOW_POINT_DIST = 8   # meters (used in custom_sample_action)
@@ -544,12 +544,6 @@ class CarlaGymEnv(gym.Env):
             done (bool): Whether the episode should terminate.
         """
         
-        # Terminal conditions
-        if self.sim_time >= self.SCENE_DURATION:
-            return -5.0, True  # Reduced penalty for running out of time
-        elif self.collision_detected:
-            return -20.0, True  # Reduced penalty for collisions
-
         # Compute distance to goal
         action_xy = np.array([target_global.x, target_global.y])
         distance_to_goal = self.compute_distance_to_goal(action_xy)
@@ -563,10 +557,21 @@ class CarlaGymEnv(gym.Env):
         progress_reward = 1.0 * (self.prev_distance - distance_to_goal)
         self.prev_distance = distance_to_goal  # Update for next step
 
-        # Reduced goal bonus
+        # Check if goal is reached
         goal_threshold = 0.5  # meters
-        if distance_to_goal < goal_threshold:
-            progress_reward += 50.0  # Reduced large bonus
+        goal_reached = distance_to_goal < goal_threshold
+
+        if goal_reached:
+            progress_reward += 50.0  # Large reward for reaching the goal
+        if goal_reached and self.sim_time >= self.SCENE_DURATION:
+            progress_reward += 50.0  # Large reward for reaching the goal
+            return progress_reward, True
+        elif self.sim_time >= self.SCENE_DURATION:  
+            return -5.0, True  # Apply penalty ONLY if goal was NOT reached
+
+        # Check for collision penalty
+        if self.collision_detected:
+            return -50.0, True  # Ends episode with collision penalty
 
         # The episode should not end when the goal is reached
         done = False  
