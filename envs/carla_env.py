@@ -20,7 +20,7 @@ from agents.navigation.controller import VehiclePIDController
 from agents.navigation.global_route_planner import GlobalRoutePlanner
 
 # MAI imports
-from observation.vector_BEV_observer import Vector_BEV_observer
+from envs.observation.vector_BEV_observer import Vector_BEV_observer
 from models.dipp_predictor_py.dipp_carla import Predictor
 from envs.carla_env_render import MatplotlibAnimationRenderer
 
