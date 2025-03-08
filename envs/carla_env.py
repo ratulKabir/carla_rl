@@ -21,8 +21,9 @@ from agents.navigation.global_route_planner import GlobalRoutePlanner
 
 # MAI imports
 from envs.observation.vector_BEV_observer import Vector_BEV_observer
-from models.dipp_predictor_py.dipp_carla import Predictor
 from envs.carla_env_render import MatplotlibAnimationRenderer
+from models.dipp_predictor_py.dipp_carla import Predictor
+from models.preprocess import Preprocessor
 
 # Load configurations from YAML
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "configs/config.yaml")
@@ -41,6 +42,7 @@ USE_CUSTOM_MAP = config["USE_CUSTOM_MAP"]
 NUM_ACTIONS = config["NUM_ACTIONS"]
 N_ACTION_PER_MANEUVER = config["N_ACTION_PER_MANEUVER"]
 SHOW_ROUTE = config["SHOW_ROUTE"]
+PREPROCESS_OBSERVATION = config["PREPROCESS_OBSERVATION"]
 display_width = config["display_width"]
 display_height = config["display_height"]
 
@@ -74,6 +76,9 @@ class CarlaGymEnv(gym.Env):
         self.SHOW_ROUTE = SHOW_ROUTE
         self.sim_time = 0.0
         self.map_path = '/home/ratul/Downloads/Tegel_map_for_Decision_1302.xodr'
+
+        if PREPROCESS_OBSERVATION:
+            self.preprocessor = Preprocessor()
         
         # Pygame setup for camera display (only if rendering enabled)
         if self.render_enabled:
@@ -137,12 +142,20 @@ class CarlaGymEnv(gym.Env):
         # Example shapes (leading dimension 1 for ego, 5 for neighbors, etc.).
         # Adjust these as needed to match your real data.
         # --------------------------------------------------------
-        self.observation_space = spaces.Dict({
-            "ego": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.HISTORY, 24), dtype=np.float32),
-            "neighbors": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.MAX_NEIGHBORS, self.bev_info.HISTORY, 24), dtype=np.float32),
-            "map": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.MAX_LANES, self.bev_info.MAX_LANE_LEN, 46), dtype=np.float32),
-            "global_route": spaces.Box(low=-np.inf, high=np.inf, shape=(self.bev_info.MAX_LANE_LEN, 3), dtype=np.float32)
+        if PREPROCESS_OBSERVATION:
+            self.observation_space = spaces.Dict({
+            "ego": spaces.Box(low=-1, high=1, shape=(1, self.bev_info.HISTORY, 7), dtype=np.float32),
+            "neighbors": spaces.Box(low=-1, high=1, shape=(1, self.bev_info.MAX_NEIGHBORS, self.bev_info.HISTORY, 8), dtype=np.float32),
+            "map": spaces.Box(low=-1, high=1, shape=(1, self.bev_info.MAX_LANES, self.bev_info.MAX_LANE_LEN, 10), dtype=np.float32),
+            "global_route": spaces.Box(low=-1, high=1, shape=(self.bev_info.MAX_LANE_LEN, 3), dtype=np.float32)
         })
+        else:
+            self.observation_space = spaces.Dict({
+                "ego": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.HISTORY, 24), dtype=np.float32),
+                "neighbors": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.MAX_NEIGHBORS, self.bev_info.HISTORY, 24), dtype=np.float32),
+                "map": spaces.Box(low=-np.inf, high=np.inf, shape=(1, self.bev_info.MAX_LANES, self.bev_info.MAX_LANE_LEN, 46), dtype=np.float32),
+                "global_route": spaces.Box(low=-np.inf, high=np.inf, shape=(self.bev_info.MAX_LANE_LEN, 3), dtype=np.float32)
+            })
 
         # Initialize collision flag
         self.collision_detected = False
@@ -294,9 +307,13 @@ class CarlaGymEnv(gym.Env):
         self.global_route = None
         self.global_route_ego_frame = torch.zeros(size=(self.bev_info.MAX_LANE_LEN, 3))
         observation = {"ego": ego_obs, 
-                       "neighbors": neighbors_obs, 
-                       "map": map_obs, 
-                       "global_route": self.global_route_ego_frame}  # New key with the global route.
+                        "neighbors": neighbors_obs, 
+                        "map": map_obs, 
+                        "global_route": self.global_route_ego_frame}  # New key with the global route.
+        
+        if PREPROCESS_OBSERVATION:
+            observation = self.preprocessor.preprocess_observation(observation)
+        
         return observation
 
     def _generate_global_route(self):
@@ -470,8 +487,12 @@ class CarlaGymEnv(gym.Env):
 
         observation = {"ego": ego_obs, 
                        "neighbors": neighbors_obs, 
-                       "map": map_obs,  
-                       "global_route": self.global_route_ego_frame}  # New key with the global route.
+                       "map": map_obs, 
+                       "global_route": self.global_route_ego_frame}
+        
+        if PREPROCESS_OBSERVATION:
+            observation = self.preprocessor.preprocess_observation(observation)
+        
         self.last_obs = observation  # Save the latest observation for rendering
 
         # Reward scheme
@@ -582,7 +603,6 @@ class CarlaGymEnv(gym.Env):
         reward = step_penalty + progress_reward
         return reward, done
 
-
     def compute_distance_to_goal(self, action_xy):
         """
         Compute the remaining distance to the goal by summing the route distances
@@ -606,7 +626,6 @@ class CarlaGymEnv(gym.Env):
         distance_to_goal = np.sum(remaining_distances)  # Sum up all distances
 
         return distance_to_goal
-
 
     def render(self, mode="human"):
         # Create the renderer if it doesn't already exist.

@@ -18,3 +18,4 @@ LOAD_MODEL: True
 SAVED_MODEL_PATH: "saved_rl_models/1.1/model_55000.zip"
 display_width: 1080
 display_height: 720
+PREPROCESS_OBSERVATION: True
