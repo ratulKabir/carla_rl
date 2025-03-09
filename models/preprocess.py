@@ -19,6 +19,12 @@ class Preprocessor:
                                        traffic_feat_idx["speed_limit"]])
         self.FOV = 50
         self.max_speed = 80 / 3.6  # Convert km/h to m/s
+        self.R_min = -350
+        self.R_max = 150
+
+    def set_reward_range(self, r_min, r_max):
+        self.R_min = r_min
+        self.R_max = r_max
         
     def preprocess_observation(self, observation):
         self.observations_before_preprocessing = observation
@@ -43,8 +49,9 @@ class Preprocessor:
         pass
 
     def preprocess_reward(self, reward):
-        # Add your reward preprocessing logic here
-        pass
+        # Normalize the reward
+        reward = 2 * (reward - self.R_min) / (self.R_max - self.R_min) - 1
+        return reward
 
     def normalize(self, observation):
         for key in observation:
