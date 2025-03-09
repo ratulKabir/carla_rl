@@ -8,7 +8,8 @@ class SaveBestAndManageCallback(BaseCallback):
     Custom callback that:
       - Saves a checkpoint every `save_freq` timesteps.
       - Keeps only the most recent 5 checkpoint files.
-      - Uses an EvalCallback to save the best model based on evaluation performance.
+      - Saves the best 5 models based on evaluation rewards.
+      - Adds reward value to the saved model filename.
       - Logs action frequency distributions to TensorBoard every `save_freq` steps.
     """
 
@@ -17,10 +18,11 @@ class SaveBestAndManageCallback(BaseCallback):
         self.save_freq = save_freq
         self.save_path = save_path
         self.n_eval_episodes = n_eval_episodes
-        self.saved_checkpoints = []  # List to store checkpoint filenames
-        self.action_buffer_0 = []  # Store actions between logs
+        self.saved_checkpoints = []  # Stores recent checkpoints (last 5)
+        self.best_models = []  # Stores best models based on reward
+        self.action_buffer_0 = []
         self.action_buffer_1 = []
-        self.writer = None  # TensorBoard writer (initialized in `_on_training_start`)
+        self.writer = None
 
         # Create an evaluation callback for saving the best model
         self.eval_callback = EvalCallback(
@@ -31,19 +33,18 @@ class SaveBestAndManageCallback(BaseCallback):
         )
 
     def _on_training_start(self):
-        """Called at the beginning of training, initializes the TensorBoard writer."""
+        """Called at the beginning of training, initializes TensorBoard writer."""
         self.writer = SummaryWriter(self.logger.dir)
 
     def _on_step(self) -> bool:
         """Called at every step during training."""
         actions_0 = self.locals["actions"][0, 0]
-        actions_1 = self.locals["actions"][0, 1]  # Get the actions taken at this step
-        # Convert to NumPy and store in buffer
+        actions_1 = self.locals["actions"][0, 1]
         self.action_buffer_0.append(actions_0)
         self.action_buffer_1.append(actions_1)
 
-        # Log action distribution every `save_freq` steps
         if self.num_timesteps % self.save_freq == 0:
+            # Log action distributions
             actions_np_0 = np.array(self.action_buffer_0)
             actions_np_1 = np.array(self.action_buffer_1)
             self.writer.add_histogram("action_distribution/maneuver", actions_np_0, self.num_timesteps)
@@ -51,14 +52,15 @@ class SaveBestAndManageCallback(BaseCallback):
             self.action_buffer_0 = []
             self.action_buffer_1 = []
 
-            # Save model checkpoint
+            # Save model checkpoint (for recent models)
             ckpt_path = os.path.join(self.save_path, f"model_{self.num_timesteps}.zip")
             self.model.save(ckpt_path)
             self.saved_checkpoints.append(ckpt_path)
+
             if self.verbose > 0:
                 print(f"Saved checkpoint: {ckpt_path}")
 
-            # Delete oldest checkpoints if more than 5 are saved
+            # Remove oldest checkpoint if more than 5 saved
             if len(self.saved_checkpoints) > 5:
                 old_ckpt = self.saved_checkpoints.pop(0)
                 if os.path.exists(old_ckpt):
@@ -69,8 +71,32 @@ class SaveBestAndManageCallback(BaseCallback):
         return True
 
     def _on_rollout_end(self):
-        """Called at the end of each rollout to trigger evaluation."""
+        """Called at the end of each rollout to evaluate and save the best models."""
         self.eval_callback.on_rollout_end()
+
+        # Retrieve last evaluation reward
+        last_eval_reward = self.eval_callback.last_mean_reward
+
+        if last_eval_reward is not None:
+            # Save best models if reward is among top 5
+            if len(self.best_models) < 5 or last_eval_reward > min(self.best_models, key=lambda x: x[0])[0]:
+                best_ckpt_path = os.path.join(
+                    self.save_path, f"best_model_{last_eval_reward:.2f}_{self.num_timesteps}.zip"
+                )
+                self.model.save(best_ckpt_path)
+                self.best_models.append((last_eval_reward, best_ckpt_path))
+
+                if self.verbose > 0:
+                    print(f"Saved new best model: {best_ckpt_path} (Reward: {last_eval_reward:.2f})")
+
+                # Keep only top 5 best models
+                if len(self.best_models) > 5:
+                    worst_model = min(self.best_models, key=lambda x: x[0])  # Find worst
+                    self.best_models.remove(worst_model)
+                    if os.path.exists(worst_model[1]):
+                        os.remove(worst_model[1])  # Delete worst model file
+                        if self.verbose > 0:
+                            print(f"Deleted worst best model: {worst_model[1]} (Reward: {worst_model[0]:.2f})")
 
     def _on_training_end(self):
         """Called when training ends to properly close TensorBoard logging."""
