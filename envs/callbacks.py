@@ -8,7 +8,7 @@ class SaveBestAndManageCallback(BaseCallback):
     Custom callback that:
       - Saves a checkpoint every `save_freq` timesteps.
       - Keeps only the most recent 5 checkpoint files.
-      - Saves the best 5 models based on evaluation rewards.
+      - Saves the best 5 models based on training rewards.
       - Adds reward value to the saved model filename.
       - Logs action frequency distributions to TensorBoard every `save_freq` steps.
     """
@@ -19,9 +19,10 @@ class SaveBestAndManageCallback(BaseCallback):
         self.save_path = save_path
         self.n_eval_episodes = n_eval_episodes
         self.saved_checkpoints = []  # Stores recent checkpoints (last 5)
-        self.best_models = []  # Stores best models based on reward
+        self.best_models = []  # Stores best models based on training reward
         self.action_buffer_0 = []
         self.action_buffer_1 = []
+        self.episode_rewards = []
         self.writer = None
 
         # Create an evaluation callback for saving the best model
@@ -43,12 +44,16 @@ class SaveBestAndManageCallback(BaseCallback):
         self.action_buffer_0.append(actions_0)
         self.action_buffer_1.append(actions_1)
 
+        # Store episode rewards
+        reward = self.locals["rewards"][0]  # Assuming single agent
+        self.episode_rewards.append(reward)
+
         if self.num_timesteps % self.save_freq == 0:
             # Log action distributions
             actions_np_0 = np.array(self.action_buffer_0)
             actions_np_1 = np.array(self.action_buffer_1)
             self.writer.add_histogram("action_distribution/maneuver", actions_np_0, self.num_timesteps)
-            self.writer.add_histogram("action_distribution/long distance", actions_np_1, self.num_timesteps)
+            self.writer.add_histogram("action_distribution/long_distance", actions_np_1, self.num_timesteps)
             self.action_buffer_0 = []
             self.action_buffer_1 = []
 
@@ -71,23 +76,23 @@ class SaveBestAndManageCallback(BaseCallback):
         return True
 
     def _on_rollout_end(self):
-        """Called at the end of each rollout to evaluate and save the best models."""
+        '''Called at the end of each rollout to evaluate'''
         self.eval_callback.on_rollout_end()
+        """Called at the end of each rollout to save the best models based on training rewards."""
+        mean_training_reward = np.sum(self.episode_rewards) / len(self.episode_rewards)
+        self.episode_rewards = []  # Reset episode rewards for next rollout
 
-        # Retrieve last evaluation reward
-        last_eval_reward = self.eval_callback.last_mean_reward
-
-        if last_eval_reward is not None:
+        if mean_training_reward is not None:
             # Save best models if reward is among top 5
-            if len(self.best_models) < 5 or last_eval_reward > min(self.best_models, key=lambda x: x[0])[0]:
+            if len(self.best_models) < 5 or mean_training_reward > min(self.best_models, key=lambda x: x[0])[0]:
                 best_ckpt_path = os.path.join(
-                    self.save_path, f"best_model_{last_eval_reward:.2f}_{self.num_timesteps}.zip"
+                    self.save_path, f"best_model_{mean_training_reward:.2f}_{self.num_timesteps}.zip"
                 )
                 self.model.save(best_ckpt_path)
-                self.best_models.append((last_eval_reward, best_ckpt_path))
+                self.best_models.append((mean_training_reward, best_ckpt_path))
 
                 if self.verbose > 0:
-                    print(f"Saved new best model: {best_ckpt_path} (Reward: {last_eval_reward:.2f})")
+                    print(f"Saved new best model: {best_ckpt_path} (Reward: {mean_training_reward:.2f})")
 
                 # Keep only top 5 best models
                 if len(self.best_models) > 5:
