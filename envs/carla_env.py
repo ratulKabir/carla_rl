@@ -607,7 +607,7 @@ class CarlaGymEnv(gym.Env):
 
         # preprocess the reward
         # self.preprocessor.set_reward_range(-400, 200)
-        reward = self.preprocessor.preprocess_reward(reward)
+        # reward = self.preprocessor.preprocess_reward(reward)
         return reward, done
 
     def compute_distance_to_goal(self, action_xy):

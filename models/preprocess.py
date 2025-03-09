@@ -30,7 +30,7 @@ class Preprocessor:
         self.observations_before_preprocessing = observation
         # remove unnecessary attributes
         ego_data = observation.get('ego')[..., self.ego_attr_keep]
-        neighbors_data = observation.get('neighbors')[..., self.neighbor_attr_keep]
+        neighbors_data = observation.get('neighbors')[..., self.ego_attr_keep] # keep the same attributes as ego
         map_data = observation.get('map')[..., self.map_attr_keep]
 
         observation = {
@@ -40,7 +40,7 @@ class Preprocessor:
             'global_route': observation.get('global_route')
         }
 
-        observation = self.normalize(observation)
+        # observation = self.normalize(observation)
 
         return observation
 
