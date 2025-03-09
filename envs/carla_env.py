@@ -145,7 +145,7 @@ class CarlaGymEnv(gym.Env):
         if PREPROCESS_OBSERVATION:
             self.observation_space = spaces.Dict({
             "ego": spaces.Box(low=-1, high=1, shape=(1, self.bev_info.HISTORY, 7), dtype=np.float32),
-            "neighbors": spaces.Box(low=-1, high=1, shape=(1, self.bev_info.MAX_NEIGHBORS, self.bev_info.HISTORY, 8), dtype=np.float32),
+            "neighbors": spaces.Box(low=-1, high=1, shape=(1, self.bev_info.MAX_NEIGHBORS, self.bev_info.HISTORY, 7), dtype=np.float32),
             "map": spaces.Box(low=-1, high=1, shape=(1, self.bev_info.MAX_LANES, self.bev_info.MAX_LANE_LEN, 10), dtype=np.float32),
             "global_route": spaces.Box(low=-1, high=1, shape=(self.bev_info.MAX_LANE_LEN, 3), dtype=np.float32)
         })

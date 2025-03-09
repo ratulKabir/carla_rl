@@ -4,6 +4,7 @@ from envs.carla_env import CarlaGymEnv
 from envs.callbacks import SaveBestAndManageCallback
 from envs.carla_env_render import MatplotlibAnimationRenderer
 from stable_baselines3 import A2C
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 # Load configurations from YAML
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "envs/configs/config.yaml")
@@ -14,33 +15,82 @@ RENDER_CAMERA = config["RENDER_CAMERA"]
 TRAIN = config["TRAIN"]
 TEST = config["TEST"]
 LOAD_MODEL = config["LOAD_MODEL"]
+SAVE_PATH = config["SAVE_PATH"]
 SAVED_MODEL_PATH = os.path.join(os.path.dirname(__file__), config["SAVED_MODEL_PATH"])
+
+# Define the VecNormalize save path correctly
+VECNORM_PATH = os.path.join(SAVE_PATH, "vec_normalize.pkl")
+
+def find_best_model(path):
+    """Finds the best model saved in the given path (based on reward value in the filename)."""
+    best_model = None
+    best_reward = float("-inf")
+
+    if not os.path.exists(path):
+        return None
+
+    for file in os.listdir(path):
+        if file.startswith("best_model_") and file.endswith(".zip"):
+            try:
+                reward_value = float(file.split("_")[2])  # Extract reward value from filename
+                if reward_value > best_reward:
+                    best_reward = reward_value
+                    best_model = os.path.join(path, file)
+            except (IndexError, ValueError):
+                continue  # Skip if filename format is incorrect
+
+    return best_model
 
 if __name__ == '__main__':
     try:
-        env = CarlaGymEnv(render_enabled=False)
-        eval_env = CarlaGymEnv(render_enabled=RENDER_CAMERA) 
-        eval_env.seed(3)
+        # Create vectorized environment
+        env = DummyVecEnv([lambda: CarlaGymEnv(render_enabled=False)])
+        eval_env = DummyVecEnv([lambda: CarlaGymEnv(render_enabled=RENDER_CAMERA)])
+
+        # Apply VecNormalize (normalizes both observations and rewards)
+        env = VecNormalize(env, norm_obs=True, norm_reward=True)
+        eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, training=False)  # Don't normalize rewards during eval
 
         if TRAIN:
             # Create a directory for saving models/checkpoints.
-            save_dir = "./saved_rl_models/1.1"
+            save_dir = SAVE_PATH
             os.makedirs(save_dir, exist_ok=True)
 
-            # Create the custom callback: save a checkpoint every 10,000 timesteps.
-            callback = SaveBestAndManageCallback(eval_env=eval_env, save_freq=1000, save_path=save_dir, n_eval_episodes=5, verbose=1)
+            # Create the custom callback: save a checkpoint every 1,000 timesteps.
+            callback = SaveBestAndManageCallback(eval_env=eval_env, save_freq=1000, save_path=save_dir, vec_env=env, n_eval_episodes=5, verbose=1)
 
-            # Train a small A2C model to confirm everything runs.
+            # Train A2C model
             model = A2C("MultiInputPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
-            model.learn(total_timesteps=100_000, callback=callback)
+            model.learn(total_timesteps=50_000, callback=callback)
 
         if TEST:
-            # Load the saved model.
-            if LOAD_MODEL:
+            # Load VecNormalize statistics if available
+            if os.path.exists(VECNORM_PATH):
+                print(f"Loading VecNormalize statistics from: {VECNORM_PATH}")
+                env = DummyVecEnv([lambda: CarlaGymEnv(render_enabled=False)])
+                env = VecNormalize.load(VECNORM_PATH, env)
+                eval_env = DummyVecEnv([lambda: CarlaGymEnv(render_enabled=RENDER_CAMERA)])
+                eval_env = VecNormalize.load(VECNORM_PATH, eval_env)
+                eval_env.training = False  # Disable normalization updates during testing
+                eval_env.norm_reward = False  # Don't normalize rewards during testing
+            else:
+                print(f"Warning: VecNormalize statistics not found at {VECNORM_PATH}. Running without normalization.")
+
+            # Find the best model available
+            best_model_path = find_best_model(SAVE_PATH)
+
+            # Load the trained model
+            if best_model_path:
+                print(f"Loading best model: {best_model_path}")
+                model = A2C.load(best_model_path, env=eval_env)
+            elif LOAD_MODEL:
+                print(f"Loading last saved model: {SAVED_MODEL_PATH}")
                 model = A2C.load(SAVED_MODEL_PATH, env=eval_env)
             else:
+                print("No saved model found, initializing new model.")
                 model = A2C("MultiInputPolicy", env)
-            # Now test with a custom action:
+
+            # Testing loop
             obs = eval_env.reset()
             done = False
             step_count = 0
@@ -48,23 +98,10 @@ if __name__ == '__main__':
             renderer = MatplotlibAnimationRenderer()
             step = 0
             while not done:
-                # Selelct random action from env
-                # action = eval_env.action_space.sample()   # always drive x meters forward
-                # Get action from the trained model
                 action, _ = model.predict(obs, deterministic=True)
                 obs, reward, done, info = eval_env.step(action)
                 step_count += 1
                 print(f"Step: {step_count}, Reward: {reward}, Sim Time: {info['sim_time']}")
-
-                # ego_data = obs.get('ego')
-                # neighbors_data = obs.get('neighbors')
-                # map_data = obs.get('map')
-                # route_ef = obs.get('global_route')
-                # route_ef = route_ef[route_ef[:, 0] > 0]
-                
-                # Update the renderer with the latest simulation data.
-                # renderer.update_data(ego_data, neighbors_data, map_data, None, route_ef)
-                # renderer.update_plot(step)
                 step += 1
 
     except KeyboardInterrupt:
