@@ -3,6 +3,7 @@ Version:
 
     1: Observation: DIPP, Action: Global route based, Reward: NA
     1.1: Observation: DIPP, Action: Global route based, Reward: Big reward only for reaching the goal.
+    1.1.1: Observation: DIPP (preprocessed), Action: Global route based, Reward: Big reward only for reaching the goal.
     1.2: Observation: DIPP, Action: Global route based, Reward: Big reward only for reaching the goal, adhere speed limit
 
     2.0: Observation: DIPP, Action: Global route based, Reward: Big reward only for reaching the goal, adhere speed limit, avoid static obstacle.

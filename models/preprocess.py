@@ -30,7 +30,8 @@ class Preprocessor:
         observation = {
             'ego': ego_data,
             'neighbors': neighbors_data,
-            'map': map_data
+            'map': map_data,
+            'global_route': observation.get('global_route')
         }
 
         observation = self.normalize(observation)
@@ -57,6 +58,10 @@ class Preprocessor:
                 observation[key][..., [3, 4]] = (observation[key][..., [3, 4]] - 0.5) * 2
             elif key == 'map':
                 observation[key][..., [0, 1, 3, 4, 6, 7]] /= self.FOV
+                observation[key][..., [2, 5, 8]] /= np.pi
                 observation[key][..., 9] /= self.max_speed
                 observation[key][..., 9] = (observation[key][..., 9] - 0.5) * 2
+            elif key == 'global_route':
+                observation[key][..., [0, 1]] /= self.FOV
+                observation[key][..., 2] /= np.pi
         return observation

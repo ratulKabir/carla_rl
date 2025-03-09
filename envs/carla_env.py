@@ -226,6 +226,9 @@ class CarlaGymEnv(gym.Env):
         self.sim_time = 0.0
         self.collision_detected = False
 
+        if PREPROCESS_OBSERVATION:
+            self.preprocessor = Preprocessor()
+
         # Initialize BEV observer (your original code uses FUTURE_LEN=1)
         self.bev_info = Vector_BEV_observer(FUTURE_LEN=1)
 
